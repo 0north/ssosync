@@ -19,51 +19,33 @@ func NewSecrets(svc *secretsmanager.SecretsManager) *Secrets {
 }
 
 // GoogleAdminEmail ...
-func (s *Secrets) GoogleAdminEmail(secretArn string) (string, error) {
-     if len([]rune(secretArn)) == 0 {
-        return s.getSecret("SSOSyncGoogleAdminEmail")
-     } 
-     return s.getSecret(secretArn)
+func (s *Secrets) GoogleAdminEmail() (string, error) {
+	return s.getSecret("SSOSyncV2GoogleAdminEmail")
 }
 
 // SCIMAccessToken ...
-func (s *Secrets) SCIMAccessToken(secretArn string) (string, error) {
-     if len([]rune(secretArn)) == 0 {
-        return s.getSecret("SSOSyncSCIMAccessToken")
-     }
-     return s.getSecret(secretArn)
+func (s *Secrets) SCIMAccessToken() (string, error) {
+	return s.getSecret("SSOSyncV2SCIMAccessToken")
 }
 
-// SCIMEndpointURL ...
-func (s *Secrets) SCIMEndpointURL(secretArn string) (string, error) {
-     if len([]rune(secretArn)) == 0 {
-        return s.getSecret("SSOSyncSCIMEndpointURL")
-     }
-     return s.getSecret(secretArn)
+// SCIMEndpointUrl ...
+func (s *Secrets) SCIMEndpointUrl() (string, error) {
+	return s.getSecret("SSOSyncV2SCIMEndpointUrl")
 }
 
 // GoogleCredentials ...
-func (s *Secrets) GoogleCredentials(secretArn string) (string, error) {
-     if len([]rune(secretArn)) == 0 {
-        return s.getSecret("SSOSyncGoogleCredentials")
-     }
-     return s.getSecret(secretArn)
+func (s *Secrets) GoogleCredentials() (string, error) {
+	return s.getSecret("SSOSyncV2GoogleCredentials")
 }
 
 // Region ...
-func (s *Secrets) Region(secretArn string) (string, error) {
-     if len([]rune(secretArn)) == 0 {
-        return s.getSecret("SSOSyncRegion")
-     }
-     return s.getSecret(secretArn)
+func (s *Secrets) Region() (string, error) {
+	return s.getSecret("SSOSyncV2Region")
 }
 
-// IdentityStoreID ...
-func (s *Secrets) IdentityStoreID(secretArn string) (string, error) {
-     if len([]rune(secretArn)) == 0 {
-        return s.getSecret("IdentityStoreID")
-     }
-     return s.getSecret(secretArn)
+// Identity Store ID ...
+func (s *Secrets) IdentityStoreID() (string, error) {
+	return s.getSecret("SSOSyncV2IdentityStoreID")
 }
 
 func (s *Secrets) getSecret(secretKey string) (string, error) {
@@ -71,7 +53,6 @@ func (s *Secrets) getSecret(secretKey string) (string, error) {
 		SecretId:     aws.String(secretKey),
 		VersionStage: aws.String("AWSCURRENT"),
 	})
-
 	if err != nil {
 		return "", err
 	}
