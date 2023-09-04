@@ -19,6 +19,7 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
+	"sync"
 
 	"github.com/hashicorp/go-retryablehttp"
 
@@ -32,8 +33,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/identitystore/identitystoreiface"
 	log "github.com/sirupsen/logrus"
 	admin "google.golang.org/api/admin/directory/v1"
-
-	"github.com/remeh/sizedwaitgroup"
 )
 
 // SyncGSuite is the interface for synchronizing users/groups
@@ -540,10 +539,11 @@ type googleUser struct {
 	groupMember *admin.Member
 }
 
-func (s *syncGSuite) lookupMember(m *admin.Member, ch chan *googleUser, chErr chan error, wg *sizedwaitgroup.SizedWaitGroup) {
+func (s *syncGSuite) lookupMember(m *admin.Member, ch chan *googleUser, chErr chan error, wg *sync.WaitGroup) {
+	defer wg.Done()
+
 	if s.ignoreUser(m.Email) {
 		log.WithField("id", m.Email).Debug("ignoring user")
-		wg.Done()
 		return
 	}
 
@@ -553,18 +553,14 @@ func (s *syncGSuite) lookupMember(m *admin.Member, ch chan *googleUser, chErr ch
 	if err != nil {
 		log.Errorf("ERROR: %s", err)
 		chErr <- err
-		wg.Done()
 		return
 	}
 	if len(u) == 0 {
 		log.WithField("id", m.Email).Warn("missing user")
-		wg.Done()
 		return
 	}
 
 	ch <- &googleUser{user: u[0], groupMember: m}
-
-	wg.Done()
 }
 
 // getGoogleGroupsAndUsers return a list of google users members of googleGroups
@@ -595,10 +591,10 @@ func (s *syncGSuite) getGoogleGroupsAndUsers(googleGroups []*admin.Group) ([]*ad
 
 		ch := make(chan *googleUser)
 		chErr := make(chan error)
-		wg := sizedwaitgroup.New(10)
+		wg := sync.WaitGroup{}
 
 		for _, m := range groupMembers {
-			wg.Add()
+			wg.Add(1)
 
 			go s.lookupMember(m, ch, chErr, &wg)
 		}
@@ -611,12 +607,15 @@ func (s *syncGSuite) getGoogleGroupsAndUsers(googleGroups []*admin.Group) ([]*ad
 		}()
 		log.Debug("after wait")
 
-		// if len(chErr) > 0 {
-		// 	err = <-chErr
-		// 	if err != nil {
-		// 		return nil, nil, err
-		// 	}
-		// }
+		select {
+		case err, ok := <-chErr:
+			log.Debug("I was here")
+			if ok {
+				return nil, nil, err
+			}
+		default:
+			log.Debug("I was here, part 2, finally I promise")
+		}
 
 		for member := range ch {
 			membersUsers = append(membersUsers, member.user)
