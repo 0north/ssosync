@@ -17,12 +17,16 @@ package internal
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/ioutil"
+	"sync"
+	"time"
 
 	"github.com/awslabs/ssosync/internal/aws"
 	"github.com/awslabs/ssosync/internal/config"
 	"github.com/awslabs/ssosync/internal/google"
+	"github.com/cenkalti/backoff/v4"
 	"github.com/hashicorp/go-retryablehttp"
 
 	aws_sdk "github.com/aws/aws-sdk-go/aws"
@@ -557,33 +561,79 @@ func (s *syncGSuite) getGoogleGroupsAndUsers(googleGroups []*admin.Group) ([]*ad
 		log.Debug("get users")
 		membersUsers := make([]*admin.User, 0)
 
+		wg := &sync.WaitGroup{}
+
+		memCh := make(chan *admin.User, len(groupMembers))
+		errCh := make(chan error, len(groupMembers))
+
 		for _, m := range groupMembers {
+			wg.Add(1)
 
-			if s.ignoreUser(m.Email) {
-				log.WithField("id", m.Email).Debug("ignoring user")
-				continue
-			}
+			// Respect Google's Rate Limit: 10 rqs/sec
+			// https://developers.google.com/admin-sdk/directory/v1/limits
+			time.Sleep(100 * time.Millisecond)
 
-			log.WithField("id", m.Email).Debug("get user")
-			q := fmt.Sprintf("email:%s", m.Email)
-			u, err := s.google.GetUsers(q) // TODO: implement GetUser(m.Email)
+			go func(wg *sync.WaitGroup, m *admin.Member, memCh chan *admin.User, errCh chan error) {
+				defer wg.Done()
 
-			if err != nil {
-				return nil, nil, err
-			}
-			if len(u) == 0 {
-				log.WithField("id", m.Email).Warn("missing user")
-				continue
-			}
+				if s.ignoreUser(m.Email) {
+					log.WithField("id", m.Email).Debug("ignoring user")
+				}
 
-			membersUsers = append(membersUsers, u[0])
+				b := backoff.NewExponentialBackOff()
+				b.InitialInterval = 100 * time.Millisecond
+				b.MaxElapsedTime = 5 * time.Minute
+				err := backoff.Retry(func() error {
+					log.WithField("id", m.Email).Debug("get user")
+					q := fmt.Sprintf("email:%s", m.Email)
 
-			_, ok := gUniqUsers[m.Email]
+					u, err := s.google.GetUsers(q) // TODO: implement GetUser(m.Email)
+					if err != nil {
+						log.Errorf("%s", err)
+						return err
+					}
+
+					if len(u) == 0 {
+						log.WithField("id", m.Email).Warn("missing user")
+					}
+
+					memCh <- u[0]
+
+					return nil
+				}, b)
+
+				if err != nil {
+					errCh <- err
+					return
+				}
+			}(wg, m, memCh, errCh)
+		}
+
+		wg.Wait()
+		close(memCh)
+		close(errCh)
+
+		for m := range memCh {
+			membersUsers = append(membersUsers, m)
+
+			_, ok := gUniqUsers[m.PrimaryEmail]
 			if !ok {
-				gUniqUsers[m.Email] = u[0]
+				gUniqUsers[m.PrimaryEmail] = m
 			}
 		}
 		gGroupsUsers[g.Name] = membersUsers
+
+		// Combine all errors into a single error and return
+		var errs error
+		for err = range errCh {
+			if errs == nil {
+				errs = err
+			}
+			errs = errors.Join(errs, err)
+		}
+		if errs != nil {
+			return nil, nil, errs
+		}
 	}
 
 	for _, user := range gUniqUsers {
