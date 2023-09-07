@@ -569,10 +569,6 @@ func (s *syncGSuite) getGoogleGroupsAndUsers(googleGroups []*admin.Group) ([]*ad
 		for _, m := range groupMembers {
 			wg.Add(1)
 
-			// Respect Google's Rate Limit: 10 rqs/sec
-			// https://developers.google.com/admin-sdk/directory/v1/limits
-			// time.Sleep(100 * time.Millisecond)
-
 			if s.ignoreUser(m.Email) {
 				log.WithField("id", m.Email).Debug("ignoring user")
 				continue
