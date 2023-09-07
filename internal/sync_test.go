@@ -1044,7 +1044,7 @@ func Test_RemoveUserFromGroup(t *testing.T) {
 	assert.Nil(t, err)
 }
 
-func Test_GetGoogleUser(t *testing.T) {
+func Test_GetGoogleGroupsAndUsers(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
