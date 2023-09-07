@@ -362,19 +362,19 @@ func (s *syncGSuite) SyncGroupsUsers(query string) error {
 		log := log.WithFields(log.Fields{"user": awsUser.Username})
 
 		log.Debug("finding user")
-		_, err := s.aws.FindUserByEmail(awsUser.Username)
+		awsUserFull, err := s.aws.FindUserByEmail(awsUser.Username)
 		if err != nil {
 			return err
 		}
 
-		log.Warn("DRYRUN: deleting user")
-		// _, err = s.identityStoreClient.DeleteUser(
-		// 	&identitystore.DeleteUserInput{IdentityStoreId: &s.cfg.IdentityStoreID, UserId: &awsUserFull.ID},
-		// )
-		// if err != nil {
-		// 	log.Error("error deleting user")
-		// 	return err
-		// }
+		log.Warn("deleting user")
+		_, err = s.identityStoreClient.DeleteUser(
+			&identitystore.DeleteUserInput{IdentityStoreId: &s.cfg.IdentityStoreID, UserId: &awsUserFull.ID},
+		)
+		if err != nil {
+			log.Error("error deleting user")
+			return err
+		}
 	}
 
 	// update aws users (updated in google)
@@ -384,22 +384,22 @@ func (s *syncGSuite) SyncGroupsUsers(query string) error {
 		log := log.WithFields(log.Fields{"user": awsUser.Username})
 
 		log.Debug("finding user")
-		_, err := s.aws.FindUserByEmail(awsUser.Username)
+		awsUserFull, err := s.aws.FindUserByEmail(awsUser.Username)
 		if err != nil {
 			return err
 		}
 
-		log.Warn("DRYRUN: updating user")
-		// _, err = s.aws.UpdateUser(aws.UpdateUser(
-		// 	awsUserFull.ID,
-		// 	awsUser.Name.GivenName,
-		// 	awsUser.Name.FamilyName,
-		// 	awsUser.Username,
-		// 	awsUser.Active))
-		// if err != nil {
-		// 	log.Error("error updating user")
-		// 	return err
-		// }
+		log.Warn("updating user")
+		_, err = s.aws.UpdateUser(aws.UpdateUser(
+			awsUserFull.ID,
+			awsUser.Name.GivenName,
+			awsUser.Name.FamilyName,
+			awsUser.Username,
+			awsUser.Active))
+		if err != nil {
+			log.Error("error updating user")
+			return err
+		}
 	}
 
 	// add aws users (added in google)
@@ -408,17 +408,17 @@ func (s *syncGSuite) SyncGroupsUsers(query string) error {
 
 		log := log.WithFields(log.Fields{"user": awsUser.Username})
 
-		log.Info("DRYRUN: creating user")
-		// _, err := s.aws.CreateUser(awsUser)
-		// if err != nil {
-		// 	errHttp := new(aws.ErrHttpNotOK)
-		// 	if errors.As(err, &errHttp) && errHttp.StatusCode == 409 {
-		// 		log.WithField("user", awsUser.Username).Warn("user already exists")
-		// 		continue
-		// 	}
-		// 	log.Error("error creating user")
-		// 	return err
-		// }
+		log.Info("creating user")
+		_, err := s.aws.CreateUser(awsUser)
+		if err != nil {
+			errHttp := new(aws.ErrHttpNotOK)
+			if errors.As(err, &errHttp) && errHttp.StatusCode == 409 {
+				log.WithField("user", awsUser.Username).Warn("user already exists")
+				continue
+			}
+			log.Error("error creating user")
+			return err
+		}
 	}
 
 	// add aws groups (added in google)
@@ -427,14 +427,14 @@ func (s *syncGSuite) SyncGroupsUsers(query string) error {
 
 		log := log.WithFields(log.Fields{"group": awsGroup.DisplayName})
 
-		log.Info("DRYRUN: creating group")
-		// newAwsGroup, err := s.identityStoreClient.CreateGroup(
-		// 	&identitystore.CreateGroupInput{IdentityStoreId: &s.cfg.IdentityStoreID, DisplayName: &awsGroup.DisplayName},
-		// )
-		// if err != nil {
-		// 	log.Error("creating group")
-		// 	return err
-		// }
+		log.Info("creating group")
+		newAwsGroup, err := s.identityStoreClient.CreateGroup(
+			&identitystore.CreateGroupInput{IdentityStoreId: &s.cfg.IdentityStoreID, DisplayName: &awsGroup.DisplayName},
+		)
+		if err != nil {
+			log.Error("creating group")
+			return err
+		}
 
 		// add members of the new group
 		for _, googleUser := range googleGroupsUsers[awsGroup.DisplayName] {
@@ -446,17 +446,17 @@ func (s *syncGSuite) SyncGroupsUsers(query string) error {
 				return err
 			}
 
-			log.WithField("user", awsUserFull.Username).Info("DRYRUN: adding user to group")
-			// _, err = s.identityStoreClient.CreateGroupMembership(
-			// 	&identitystore.CreateGroupMembershipInput{
-			// 		IdentityStoreId: &s.cfg.IdentityStoreID,
-			// 		GroupId:         newAwsGroup.GroupId,
-			// 		MemberId:        &identitystore.MemberId{UserId: &awsUserFull.ID},
-			// 	},
-			// )
-			// if err != nil {
-			// 	return err
-			// }
+			log.WithField("user", awsUserFull.Username).Info("adding user to group")
+			_, err = s.identityStoreClient.CreateGroupMembership(
+				&identitystore.CreateGroupMembershipInput{
+					IdentityStoreId: &s.cfg.IdentityStoreID,
+					GroupId:         newAwsGroup.GroupId,
+					MemberId:        &identitystore.MemberId{UserId: &awsUserFull.ID},
+				},
+			)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
@@ -485,26 +485,26 @@ func (s *syncGSuite) SyncGroupsUsers(query string) error {
 			}
 
 			if !*b {
-				log.WithField("user", awsUserFull.Username).Info("DRYRUN: adding user to group")
-				// _, err = s.identityStoreClient.CreateGroupMembership(
-				// 	&identitystore.CreateGroupMembershipInput{
-				// 		IdentityStoreId: &s.cfg.IdentityStoreID,
-				// 		GroupId:         &awsGroup.ID,
-				// 		MemberId:        &identitystore.MemberId{UserId: &awsUserFull.ID},
-				// 	},
-				// )
-				// if err != nil {
-				// 	return err
-				// }
+				log.WithField("user", awsUserFull.Username).Info("adding user to group")
+				_, err = s.identityStoreClient.CreateGroupMembership(
+					&identitystore.CreateGroupMembershipInput{
+						IdentityStoreId: &s.cfg.IdentityStoreID,
+						GroupId:         &awsGroup.ID,
+						MemberId:        &identitystore.MemberId{UserId: &awsUserFull.ID},
+					},
+				)
+				if err != nil {
+					return err
+				}
 			}
 		}
 
 		for _, awsUser := range deleteUsersFromGroup[awsGroup.DisplayName] {
-			log.WithField("user", awsUser.Username).Warn("DRYRUN: removing user from group")
-			// err := s.RemoveUserFromGroup(&awsUser.ID, &awsGroup.ID)
-			// if err != nil {
-			// 	return err
-			// }
+			log.WithField("user", awsUser.Username).Warn("removing user from group")
+			err := s.RemoveUserFromGroup(&awsUser.ID, &awsGroup.ID)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
@@ -515,19 +515,19 @@ func (s *syncGSuite) SyncGroupsUsers(query string) error {
 		log := log.WithFields(log.Fields{"group": awsGroup.DisplayName})
 
 		log.Debug("finding group")
-		_, err := s.aws.FindGroupByDisplayName(awsGroup.DisplayName)
+		awsGroupFull, err := s.aws.FindGroupByDisplayName(awsGroup.DisplayName)
 		if err != nil {
 			return err
 		}
 
-		log.Warn("DRYRUN: deleting group")
-		// _, err = s.identityStoreClient.DeleteGroup(
-		// 	&identitystore.DeleteGroupInput{IdentityStoreId: &s.cfg.IdentityStoreID, GroupId: &awsGroupFull.ID},
-		// )
-		// if err != nil {
-		// 	log.Error("deleting group")
-		// 	return err
-		// }
+		log.Warn("deleting group")
+		_, err = s.identityStoreClient.DeleteGroup(
+			&identitystore.DeleteGroupInput{IdentityStoreId: &s.cfg.IdentityStoreID, GroupId: &awsGroupFull.ID},
+		)
+		if err != nil {
+			log.Error("deleting group")
+			return err
+		}
 	}
 
 	log.Info("sync completed")
