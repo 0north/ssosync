@@ -19,10 +19,13 @@ import (
 	"context"
 	"errors"
 	"io/ioutil"
+	"sync"
+	"time"
 
 	"github.com/awslabs/ssosync/internal/aws"
 	"github.com/awslabs/ssosync/internal/config"
 	"github.com/awslabs/ssosync/internal/google"
+	"github.com/cenkalti/backoff/v4"
 	"github.com/hashicorp/go-retryablehttp"
 
 	aws_sdk "github.com/aws/aws-sdk-go/aws"
@@ -65,13 +68,14 @@ func New(cfg *config.Config, a aws.Client, g google.Client, ids identitystoreifa
 // References:
 // * https://developers.google.com/admin-sdk/directory/v1/guides/search-users
 // query possible values:
-// '' --> empty or not defined
-//  name:'Jane'
-//  email:admin*
-//  isAdmin=true
-//  manager='janesmith@example.com'
-//  orgName=Engineering orgTitle:Manager
-//  EmploymentData.projects:'GeneGnomes'
+// ” --> empty or not defined
+//
+//	name:'Jane'
+//	email:admin*
+//	isAdmin=true
+//	manager='janesmith@example.com'
+//	orgName=Engineering orgTitle:Manager
+//	EmploymentData.projects:'GeneGnomes'
 func (s *syncGSuite) SyncUsers(query string) error {
 	log.Debug("get deleted users")
 	deletedUsers, err := s.google.GetDeletedUsers()
@@ -164,13 +168,14 @@ func (s *syncGSuite) SyncUsers(query string) error {
 // References:
 // * https://developers.google.com/admin-sdk/directory/v1/guides/search-groups
 // query possible values:
-// '' --> empty or not defined
-//  name='contact'
-//  email:admin*
-//  memberKey=user@company.com
-//  name:contact* email:contact*
-//  name:Admin* email:aws-*
-//  email:aws-*
+// ” --> empty or not defined
+//
+//	name='contact'
+//	email:admin*
+//	memberKey=user@company.com
+//	name:contact* email:contact*
+//	name:Admin* email:aws-*
+//	email:aws-*
 func (s *syncGSuite) SyncGroups(query string) error {
 
 	log.WithField("query", query).Debug("get google groups")
@@ -270,21 +275,23 @@ func (s *syncGSuite) SyncGroups(query string) error {
 // References:
 // * https://developers.google.com/admin-sdk/directory/v1/guides/search-groups
 // query possible values:
-// '' --> empty or not defined
-//  name='contact'
-//  email:admin*
-//  memberKey=user@company.com
-//  name:contact* email:contact*
-//  name:Admin* email:aws-*
-//  email:aws-*
+// ” --> empty or not defined
+//
+//	name='contact'
+//	email:admin*
+//	memberKey=user@company.com
+//	name:contact* email:contact*
+//	name:Admin* email:aws-*
+//	email:aws-*
+//
 // process workflow:
-//  1) delete users in aws, these were deleted in google
-//  2) update users in aws, these were updated in google
-//  3) add users in aws, these were added in google
-//  4) add groups in aws and add its members, these were added in google
-//  5) validate equals aws an google groups members
-//  6) delete groups in aws, these were deleted in google
-func (s *syncGSuite) SyncGroupsUsers(queryGroups string, queryUsers string) error {
+//  1. delete users in aws, these were deleted in google
+//  2. update users in aws, these were updated in google
+//  3. add users in aws, these were added in google
+//  4. add groups in aws and add its members, these were added in google
+//  5. validate equals aws an google groups members
+//  6. delete groups in aws, these were deleted in google
+func (s *syncGSuite) SyncGroupsUsers(query string) error {
 
 	log.WithField("queryGroup", queryGroups).Info("get google groups")
 	log.WithField("queryUsers", queryUsers).Info("get google users")
@@ -598,13 +605,35 @@ func (s *syncGSuite) getGoogleGroupsAndUsers(queryGroups string, queryUsers stri
 		log.Debug("get group members from google")
 		membersUsers := s.getGoogleUsersInGroup(g, gUserDetailCache, gGroupDetailCache)
 
-		// If we've not seen the user email address before add it to the list of unique users
-		// also, we need to deduplicate the list of members.
-		gUniqMembers := make(map[string]*admin.User)
-                for _, m := range membersUsers {
+		log.Debug("get users")
+		membersUsers := make([]*admin.User, 0)
+
+		wg := &sync.WaitGroup{}
+
+		memCh := make(chan *admin.User, len(groupMembers))
+		errCh := make(chan error, len(groupMembers))
+
+		for _, m := range groupMembers {
+			wg.Add(1)
+
+			if s.ignoreUser(m.Email) {
+				log.WithField("id", m.Email).Debug("ignoring user")
+				continue
+			}
+
+			go getGoogleUser(s.google, wg, m, memCh, errCh)
+		}
+
+		wg.Wait()
+		close(memCh)
+		close(errCh)
+
+		for m := range memCh {
+			membersUsers = append(membersUsers, m)
+
 			_, ok := gUniqUsers[m.PrimaryEmail]
 			if !ok {
-				gUniqUsers[m.PrimaryEmail] = gUserDetailCache[m.PrimaryEmail]
+				gUniqUsers[m.PrimaryEmail] = m
 			}
 
 			_, ok = gUniqMembers[m.PrimaryEmail]
@@ -612,12 +641,19 @@ func (s *syncGSuite) getGoogleGroupsAndUsers(queryGroups string, queryUsers stri
                                 gUniqMembers[m.PrimaryEmail] = gUserDetailCache[m.PrimaryEmail]
                         }
 		}
+		gGroupsUsers[g.Name] = membersUsers
 
-	        gMembers := make([]*admin.User, 0)
-	        for _, member := range gUniqMembers {
-                        gMembers = append(gMembers, member)
-                }
-		gGroupsUsers[g.Name] = gMembers
+		// Combine all errors into a single error and return
+		var errs error
+		for err = range errCh {
+			if errs == nil {
+				errs = err
+			}
+			errs = errors.Join(errs, err)
+		}
+		if errs != nil {
+			return nil, nil, errs
+		}
 	}
 
 	for _, user := range gUniqUsers {
@@ -625,6 +661,40 @@ func (s *syncGSuite) getGoogleGroupsAndUsers(queryGroups string, queryUsers stri
 	}
 
 	return gGroups, gUsers, gGroupsUsers, nil
+}
+
+// getGoogleUser looks up a user in Google. If request fails, retries with
+// exponential backoff.
+func getGoogleUser(g google.Client, wg *sync.WaitGroup, m *admin.Member, memCh chan *admin.User, errCh chan error) {
+	defer wg.Done()
+
+	b := backoff.NewExponentialBackOff()
+	b.InitialInterval = 100 * time.Millisecond
+	b.MaxElapsedTime = 5 * time.Minute
+	err := backoff.Retry(func() error {
+		log.WithField("id", m.Email).Debug("get user")
+		q := fmt.Sprintf("email:%s", m.Email)
+
+		u, err := g.GetUsers(q) // TODO: implement GetUser(m.Email)
+		if err != nil {
+			log.Errorf("%s", err)
+			return err
+		}
+
+		if len(u) == 0 {
+			log.WithField("id", m.Email).Warn("missing user")
+			return nil
+		}
+
+		memCh <- u[0]
+
+		return nil
+	}, b)
+
+	if err != nil {
+		errCh <- err
+		return
+	}
 }
 
 // getGroupOperations returns the groups of AWS that must be added, deleted and are equals
@@ -934,8 +1004,8 @@ func ConvertSdkUserObjToNative(user *identitystore.User) *aws.User {
 
 	for _, email := range user.Emails {
 		if email.Value == nil || email.Type == nil || email.Primary == nil {
-              		// This must be a user created by AWS Control Tower
-                        // Need feature development to make how these users are treated
+			// This must be a user created by AWS Control Tower
+			// Need feature development to make how these users are treated
 			// configurable.
 			continue
 		}
