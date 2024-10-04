@@ -43,7 +43,8 @@ Metadata:
 
   AWS::ServerlessRepo::Application:
     Name: ssosync
-    Description: Helping you populate AWS SSO directly with your Google Apps users.
+    Description:
+      Helping you populate AWS SSO directly with your Google Apps users.
     Author: Sebastian Doell
     SpdxLicenseId: Apache-2.0
     # paths are relative to .aws-sam/build directory
@@ -607,7 +608,7 @@ Resources:
     Type: "AWS::SecretsManager::Secret"
     Condition: CreateSecrets
     Properties:
-      Name: SSOSyncGoogleCredentials
+      Name: SSOSyncV2GoogleCredentials
       SecretString: !Ref GoogleCredentials
       KmsKeyId: !If [CreateKey, !Ref KeyAlias, alias/aws/secretsmanager]
 
@@ -630,7 +631,7 @@ Resources:
     Type: "AWS::SecretsManager::Secret"
     Condition: CreateSecrets
     Properties:
-      Name: SSOSyncGoogleAdminEmail
+      Name: SSOSyncV2GoogleAdminEmail
       SecretString: !Ref GoogleAdminEmail
       KmsKeyId: !If [CreateKey, !Ref KeyAlias, alias/aws/secretsmanager]
 
@@ -653,7 +654,7 @@ Resources:
     Type: "AWS::SecretsManager::Secret"
     Condition: CreateSecrets
     Properties:
-      Name: SSOSyncSCIMEndpointUrl
+      Name: SSOSyncV2SCIMEndpointUrl
       SecretString: !Ref SCIMEndpointUrl
       KmsKeyId: !If [CreateKey, !Ref KeyAlias, alias/aws/secretsmanager]
 
@@ -676,7 +677,7 @@ Resources:
     Type: "AWS::SecretsManager::Secret"
     Condition: CreateSecrets
     Properties:
-      Name: SSOSyncSCIMAccessToken
+      Name: SSOSyncV2SCIMAccessToken
       SecretString: !Ref SCIMEndpointAccessToken
       KmsKeyId: !If [CreateKey, !Ref KeyAlias, alias/aws/secretsmanager]
 
@@ -699,7 +700,7 @@ Resources:
     Type: "AWS::SecretsManager::Secret"
     Condition: CreateSecrets
     Properties:
-      Name: SSOSyncRegion
+      Name: SSOSyncV2Region
       SecretString: !Ref Region
       KmsKeyId: !If [CreateKey, !Ref KeyAlias, alias/aws/secretsmanager]
 
@@ -722,7 +723,7 @@ Resources:
     Type: "AWS::SecretsManager::Secret"
     Condition: CreateSecrets
     Properties:
-      Name: SSOSyncIdentityStoreID
+      Name: SSOSyncV2IdentityStoreID
       SecretString: !Ref IdentityStoreID
       KmsKeyId: !If [CreateKey, !Ref KeyAlias, alias/aws/secretsmanager]
 

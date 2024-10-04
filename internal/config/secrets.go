@@ -71,7 +71,6 @@ func (s *Secrets) getSecret(secretKey string) (string, error) {
 		SecretId:     aws.String(secretKey),
 		VersionStage: aws.String("AWSCURRENT"),
 	})
-
 	if err != nil {
 		return "", err
 	}

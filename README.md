@@ -1,14 +1,10 @@
 # SSO Sync
 
-![Github Action](https://github.com/awslabs/ssosync/workflows/main/badge.svg)
-<a href='https://github.com/jpoles1/gopherbadger' target='_blank'>![gopherbadger-tag-do-not-edit](https://img.shields.io/badge/Go%20Coverage-42%25-brightgreen.svg?longCache=true&style=flat)</a>
-[![Go Report Card](https://goreportcard.com/badge/github.com/awslabs/ssosync)](https://goreportcard.com/report/github.com/awslabs/ssosync)
-[![License Apache 2](https://img.shields.io/badge/License-Apache2-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
-[![Taylor Swift](https://img.shields.io/badge/secured%20by-taylor%20swift-brightgreen.svg)](https://twitter.com/SwiftOnSecurity)
+Fork of https://github.com/awslabs/ssosync.
 
-> Helping you populate AWS SSO directly with your Google Apps users
+## Deploy Changes
 
-SSO Sync will run on any platform that Go can build for. It is available in the [AWS Serverless Application Repository](https://console.aws.amazon.com/lambda/home#/create/app?applicationId=arn:aws:serverlessrepo:us-east-2:004480582608:applications/SSOSync)
+### Prerequisites
 
 > [!CAUTION]
 > When using ssosync with an instance of IAM Identity Center integrated with AWS Control Tower. AWS Control Tower creates a number of groups and users (directly via the Identity Store API), when an external identity provider is configured these users and groups are can not be used to log in. However it is important to remember that because ssosync implemements a uni-directional sync it will make the IAM Identity Store match the subset of your Google Workspaces directory you specify, including removing these groups and users created by AWS Control Tower. There is a PFR [#179 Configurable handling of 'manually created' Users/Groups in IAM Identity Center](https://github.com/awslabs/ssosync/issues/179) to implement an option to ignore these users and groups, hopefully this will be implemented in version 3.x. However, this has a dependancy on PFR [#166 Ensure all groups/user creates in IAM Identity Store are via SCIM api and populate externalId field](https://github.com/awslabs/ssosync/issues/166), to be able to reliably and consistently disinguish between **SCIM Provisioned** users from **Manually Created** users
