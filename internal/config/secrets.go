@@ -2,7 +2,6 @@ package config
 
 import (
 	"encoding/base64"
-
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/secretsmanager"
 )
@@ -73,3 +72,6 @@ func (s *Secrets) getSecret(secretKey string) (string, error) {
 
 	return secretString, nil
 }
+
+
+
