@@ -285,13 +285,13 @@ func (s *syncGSuite) SyncGroups(query string) error {
 //	email:aws-*
 //
 // process workflow:
-//  1) delete users in aws, these were deleted in google
-//  2) update users in aws, these were updated in google
-//  3) add users in aws, these were added in google
-//  4) add groups in aws and add its members, these were added in google
-//  5) validate equals aws an google groups members
-//  6) delete groups in aws, these were deleted in google
-func (s *syncGSuite) SyncGroupsUsers(queryGroups string, queryUsers string) error {
+//  1. delete users in aws, these were deleted in google
+//  2. update users in aws, these were updated in google
+//  3. add users in aws, these were added in google
+//  4. add groups in aws and add its members, these were added in google
+//  5. validate equals aws an google groups members
+//  6. delete groups in aws, these were deleted in google
+func (s *syncGSuite) SyncGroupsUsers(query string) error {
 
 	log.WithField("queryGroup", queryGroups).Info("get google groups")
 	log.WithField("queryUsers", queryUsers).Info("get google users")
@@ -627,11 +627,55 @@ func (s *syncGSuite) getGoogleGroupsAndUsers(queryGroups string, queryUsers stri
 		gGroupsUsers[g.Name] = gMembers
 	}
 
-	for _, user := range gUniqUsers {
-		gUsers = append(gUsers, user)
-	}
+		wg := &sync.WaitGroup{}
+
+		memCh := make(chan *admin.User, len(groupMembers))
+		errCh := make(chan error, len(groupMembers))
+
+		for _, m := range groupMembers {
+			wg.Add(1)
 
 	return gGroups, gUsers, gGroupsUsers, nil
+}
+			go getGoogleUser(s.google, wg, m, memCh, errCh)
+		}
+
+		wg.Wait()
+		close(memCh)
+		close(errCh)
+
+		for m := range memCh {
+			membersUsers = append(membersUsers, m)
+
+			_, ok := gUniqUsers[m.PrimaryEmail]
+			if !ok {
+				gUniqUsers[m.PrimaryEmail] = m
+			}
+		}
+		gGroupsUsers[g.Name] = membersUsers
+
+		// Combine all errors into a single error and return
+		var errs error
+		for err = range errCh {
+			if errs == nil {
+				errs = err
+			}
+			errs = errors.Join(errs, err)
+		}
+		if errs != nil {
+			return nil, nil, errs
+		}
+	}
+
+		memCh <- u[0]
+
+		return nil
+	}, b)
+
+	if err != nil {
+		errCh <- err
+		return
+	}
 }
 
 // getGoogleUser looks up a user in Google. If request fails, retries with
