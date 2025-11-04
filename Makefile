@@ -1,4 +1,4 @@
-OUTPUT = main # Referenced as Handler in template.yaml
+OUTPUT = bootstrap # Referenced as Handler in template.yaml
 RELEASER = goreleaser
 PACKAGED_TEMPLATE = packaged.yaml
 STACK_NAME := ssosyncv2
@@ -16,25 +16,28 @@ test:
 go-build:
 	go build -o $(APP_NAME) main.go
 
-build-SSOSyncFunction:
+build-SSOSyncV2Function:
 	GOOS=linux GOARCH=arm64 go build -o bootstrap main.go
 	cp ./bootstrap $(ARTIFACTS_DIR)/.
 
 .PHONY: clean
 clean:
 	rm -f $(OUTPUT) $(PACKAGED_TEMPLATE)
+	rm -rf .aws-sam/
 
 .PHONY: install
 install:
 	go get ./...
 
-main: main.go
-	goreleaser build --snapshot --rm-dist
+# Build for Lambda (ARM64 Linux)
+.PHONY: lambda-build
+lambda-build:
+	GOOS=linux GOARCH=arm64 go build -o bootstrap main.go
 
 # compile the code to run in Lambda (local or real)
 .PHONY: lambda
 lambda:
-	$(MAKE) main
+	$(MAKE) lambda-build
 
 .PHONY: build
 build: clean lambda
