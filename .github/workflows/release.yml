@@ -43,7 +43,7 @@ jobs:
           go-version: '1.17.x'
           
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v2
+        uses: goreleaser/goreleaser-action@b953231f81b8dfd023c58e0854a721e35037f28b # v2
         with:
           version: latest
           args: release --rm-dist
