@@ -17,6 +17,11 @@ package google
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
+	"encoding/pem"
+	"regexp"
+	"strings"
 
 	"golang.org/x/oauth2/google"
 	admin "google.golang.org/api/admin/directory/v1"
@@ -38,6 +43,11 @@ type client struct {
 
 // NewClient creates a new client for Google's Admin API
 func NewClient(ctx context.Context, adminEmail string, serviceAccountKey []byte) (Client, error) {
+	serviceAccountKey, err := normalizeServiceAccountKey(serviceAccountKey)
+	if err != nil {
+		return nil, err
+	}
+
 	config, err := google.JWTConfigFromJSON(serviceAccountKey, admin.AdminDirectoryGroupReadonlyScope,
 		admin.AdminDirectoryGroupMemberReadonlyScope,
 		admin.AdminDirectoryUserReadonlyScope)
@@ -146,4 +156,56 @@ func (c *client) GetGroups(query string) ([]*admin.Group, error) {
 
 	}
 	return g, err
+}
+
+var pemBlockRe = regexp.MustCompile(`(?s)-----BEGIN ([A-Z ]+)-----(.*?)-----END [A-Z ]+-----`)
+var nonBase64Re = regexp.MustCompile(`[^A-Za-z0-9+/=]`)
+
+// normalizeServiceAccountKey repairs the private_key of a service account
+// JSON key that was mangled on its way into storage, e.g. newlines stored as
+// literal "\n" sequences, stripped newlines, or a missing PEM header.
+// Keys that already decode as PEM, and input that is not JSON, are returned
+// unchanged so JWTConfigFromJSON can report any error itself.
+func normalizeServiceAccountKey(serviceAccountKey []byte) ([]byte, error) {
+	var key map[string]interface{}
+	if err := json.Unmarshal(serviceAccountKey, &key); err != nil {
+		return serviceAccountKey, nil
+	}
+
+	privateKey, ok := key["private_key"].(string)
+	if !ok {
+		return serviceAccountKey, nil
+	}
+
+	fixed := normalizePrivateKey(privateKey)
+	if fixed == privateKey {
+		return serviceAccountKey, nil
+	}
+
+	key["private_key"] = fixed
+
+	return json.Marshal(key)
+}
+
+func normalizePrivateKey(privateKey string) string {
+	if block, _ := pem.Decode([]byte(privateKey)); block != nil {
+		return privateKey
+	}
+
+	blockType, body := "PRIVATE KEY", privateKey
+	if m := pemBlockRe.FindStringSubmatch(privateKey); m != nil {
+		blockType, body = m[1], m[2]
+	}
+
+	// Drop literal escape sequences before filtering, since 'n' and 'r' are
+	// valid base64 characters.
+	body = strings.NewReplacer(`\n`, "", `\r`, "").Replace(body)
+	body = nonBase64Re.ReplaceAllString(body, "")
+
+	der, err := base64.StdEncoding.DecodeString(body)
+	if err != nil || len(der) == 0 {
+		return privateKey
+	}
+
+	return string(pem.EncodeToMemory(&pem.Block{Type: blockType, Bytes: der}))
 }

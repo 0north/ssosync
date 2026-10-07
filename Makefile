@@ -12,6 +12,12 @@ APP_NAME ?= ssosync
 test:
 	go test ./...
 
+# Runs against the live SSOSyncV2* secrets in AWS Secrets Manager and Google Workspace.
+# Requires AWS credentials, e.g. AWS_PROFILE=<profile> make test-integration
+.PHONY: test-integration
+test-integration:
+	go test -tags integration -count=1 -v -run Live ./internal/google/...
+
 .PHONY: go-build
 go-build:
 	go build -o $(APP_NAME) main.go
